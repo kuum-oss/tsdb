@@ -78,7 +78,7 @@ public:
         std::unique_lock lock(mutex);
         
         size_t record_len = data.size();
-        size_t total_len = 8 + 4 + 2 + 1 + record_len;
+        size_t total_len = 8 + 4 + 4 + 1 + record_len; // 8B LSN, 4B CRC, 4B len, 1B sentinel, payload
 
         if (write_offset + total_len > mmap_size) {
             grow_and_map(mmap_size + CHUNK_SIZE + total_len);
@@ -90,15 +90,22 @@ public:
             span[i] = static_cast<uint8_t>((lsn >> (i * 8)) & 0xFF);
         }
 
+        // Write length (4 bytes starting at offset 12)
         span[12] = static_cast<uint8_t>(record_len & 0xFF);
         span[13] = static_cast<uint8_t>((record_len >> 8) & 0xFF);
+        span[14] = static_cast<uint8_t>((record_len >> 16) & 0xFF);
+        span[15] = static_cast<uint8_t>((record_len >> 24) & 0xFF);
 
-        span[14] = 0xAB;
+        // Sentinel (1 byte at offset 16)
+        span[16] = 0xAB;
 
-        std::memcpy(span.data() + 15, data.data(), record_len);
+        // Payload starting at offset 17
+        std::memcpy(span.data() + 17, data.data(), record_len);
 
-        uint32_t crc = crc32_ieee(span.data() + 12, 3 + record_len);
+        // Calculate CRC starting from length (offset 12) through the end of payload
+        uint32_t crc = crc32_ieee(span.data() + 12, 5 + record_len); // 4B len + 1B sentinel + payload_len
 
+        // Write CRC at offset 8..11
         for (int i = 0; i < 4; ++i) {
             span[8 + i] = static_cast<uint8_t>((crc >> (i * 8)) & 0xFF);
         }
@@ -138,7 +145,7 @@ public:
         const uint8_t* ptr = static_cast<const uint8_t*>(addr);
         size_t offset = 0;
 
-        while (offset + 15 <= size) {
+        while (offset + 17 <= size) {
             uint64_t lsn = 0;
             for (int i = 0; i < 8; ++i) {
                 lsn |= (static_cast<uint64_t>(ptr[offset + i]) << (i * 8));
@@ -149,10 +156,13 @@ public:
                 expected_crc |= (static_cast<uint32_t>(ptr[offset + 8 + i]) << (i * 8));
             }
 
-            uint16_t len = ptr[offset + 12] | (static_cast<uint16_t>(ptr[offset + 13]) << 8);
-            uint8_t sentinel = ptr[offset + 14];
+            uint32_t len = ptr[offset + 12] |
+                           (static_cast<uint32_t>(ptr[offset + 13]) << 8) |
+                           (static_cast<uint32_t>(ptr[offset + 14]) << 16) |
+                           (static_cast<uint32_t>(ptr[offset + 15]) << 24);
+            uint8_t sentinel = ptr[offset + 16];
 
-            if (offset + 15 + len > size) {
+            if (offset + 17 + len > size) {
                 break;
             }
 
@@ -160,18 +170,18 @@ public:
                 break;
             }
 
-            uint32_t actual_crc = crc32_ieee(ptr + offset + 12, 3 + len);
+            uint32_t actual_crc = crc32_ieee(ptr + offset + 12, 5 + len);
             if (actual_crc != expected_crc) {
                 break;
             }
 
             MetricEntry entry;
-            if (entry.deserialize(ptr + offset + 15, len) == len) {
+            if (entry.deserialize(ptr + offset + 17, len) == len) {
                 cb(lsn, entry);
                 last_lsn = std::max(last_lsn, lsn);
             }
 
-            offset += 15 + len;
+            offset += 17 + len;
         }
 
         munmap(addr, size);
@@ -246,7 +256,7 @@ void StorageEngine::trigger_async_snapshot() {
     auto db_copy = db;
     uint64_t snap_lsn = lsn_counter.load() - 1;
     
-    std::async(std::launch::async, [this, db_copy = std::move(db_copy), snap_lsn]() {
+    std::thread([this, db_copy = std::move(db_copy), snap_lsn]() {
         try {
             std::string temp_path = snapshot_path + ".tmp";
             std::ofstream out(temp_path, std::ios::binary);
@@ -279,7 +289,7 @@ void StorageEngine::trigger_async_snapshot() {
             fs::rename(temp_path, snapshot_path);
         } catch (...) {
         }
-    });
+    }).detach();
 }
 
 void StorageEngine::load_snapshot() {
@@ -333,11 +343,19 @@ void StorageEngine::prune_expired_data(uint32_t ttl_seconds) {
     uint64_t cutoff = now - ttl_seconds;
 
     for (auto& [key, ts] : db) {
+        if (ts.timestamps.size() != ts.values.size()) {
+            // Restore invariant if mismatched
+            size_t min_sz = std::min(ts.timestamps.size(), ts.values.size());
+            ts.timestamps.resize(min_sz);
+            ts.values.resize(min_sz);
+        }
         auto it = std::lower_bound(ts.timestamps.begin(), ts.timestamps.end(), cutoff);
         if (it != ts.timestamps.begin()) {
             size_t dist = std::distance(ts.timestamps.begin(), it);
-            ts.timestamps.erase(ts.timestamps.begin(), it);
-            ts.values.erase(ts.values.begin(), ts.values.begin() + dist);
+            if (dist <= ts.timestamps.size() && dist <= ts.values.size()) {
+                ts.timestamps.erase(ts.timestamps.begin(), it);
+                ts.values.erase(ts.values.begin(), ts.values.begin() + dist);
+            }
         }
     }
 }

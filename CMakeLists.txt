@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.20)
-include_directories(SYSTEM "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1")
 project(tsdb)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -31,3 +30,4 @@ endif()
 # Interactive CLI Tool Executable
 add_executable(tsdb-cli protocol.cppm cli.cpp)
 set_target_properties(tsdb-cli PROPERTIES UNITY_BUILD ON)
+include_directories(SYSTEM "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1")

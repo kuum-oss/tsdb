@@ -353,6 +353,7 @@ void NetworkServer::handle_connection(int client_fd) {
                                 ack_lsn |= (static_cast<uint64_t>(ack_payload[i]) << (i * 8));
                             }
                         }
+                        replication.trim_log(ack_lsn);
                         last_acked_lsn = ack_lsn + 1;
                     }
                     // Wait for new entries

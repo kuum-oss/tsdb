@@ -40,21 +40,12 @@ int main(int argc, char* argv[]) {
 
     std::cout << std::format("[System] Starting TSDB node as {} on port {}\n", role, port);
 
-    // Startup sequence latch: 1 step for storage initialization
-    std::latch startup_latch(1);
-
     std::unique_ptr<StorageEngine> storage;
     std::unique_ptr<ReplicationManager> replication = std::make_unique<ReplicationManager>();
 
-    std::thread init_thread([&]() {
-        std::cout << "[System] Restoring from snapshot and replaying WAL...\n";
-        storage = std::make_unique<StorageEngine>(wal_dir, ttl);
-        std::cout << "[System] Database initialization complete. Last LSN: " << (storage->get_lsn() > 0 ? storage->get_lsn() - 1 : 0) << "\n";
-        startup_latch.count_down();
-    });
-
-    startup_latch.wait();
-    init_thread.join();
+    std::cout << "[System] Restoring from snapshot and replaying WAL...\n";
+    storage = std::make_unique<StorageEngine>(wal_dir, ttl);
+    std::cout << "[System] Database initialization complete. Last LSN: " << (storage->get_lsn() > 0 ? storage->get_lsn() - 1 : 0) << "\n";
 
     std::cout << "[System] Starting network listener...\n";
     NetworkServer server(port, role, *storage, *replication);

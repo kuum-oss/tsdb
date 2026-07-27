@@ -8,10 +8,10 @@ module;
 export module tsdb.protocol;
 
 export namespace tsdb::protocol {
-    export constexpr uint32_t MAGIC = 0x54534442; // 'TSDB'
-    export constexpr uint8_t VERSION = 1;
+    constexpr uint32_t MAGIC = 0x54534442; // 'TSDB'
+    constexpr uint8_t VERSION = 1;
 
-    export enum class MsgType : uint8_t {
+    enum class MsgType : uint8_t {
         WRITE = 1,
         QUERY = 2,
         REPLICATE = 3,
@@ -19,12 +19,12 @@ export namespace tsdb::protocol {
         HEARTBEAT = 5
     };
 
-    export struct Frame {
+    struct Frame {
         MsgType type;
         std::vector<uint8_t> payload;
     };
 
-    export std::vector<uint8_t> serialize_frame(const Frame& frame) {
+    std::vector<uint8_t> serialize_frame(const Frame& frame) {
         std::vector<uint8_t> buf;
         buf.reserve(10 + frame.payload.size());
         
@@ -52,12 +52,12 @@ export namespace tsdb::protocol {
         return buf;
     }
 
-    export struct ParseResult {
+    struct ParseResult {
         std::optional<Frame> frame;
         size_t bytes_consumed;
     };
 
-    export ParseResult parse_frame(const uint8_t* data, size_t size) {
+    ParseResult parse_frame(const uint8_t* data, size_t size) {
         if (size < 10) {
             return {std::nullopt, 0};
         }

@@ -47,6 +47,9 @@ concept NumericRange = requires(T t) {
     typename T::value_type;
     { t.begin() } -> std::input_or_output_iterator;
     { t.end() } -> std::input_or_output_iterator;
+    { t.empty() } -> std::same_as<bool>;
+    { t.size() } -> std::convertible_to<std::size_t>;
+    { t[std::declval<std::size_t>()] } -> std::convertible_to<typename T::value_type>;
 } && std::is_arithmetic_v<typename T::value_type>;
 
 template<NumericRange R>

@@ -6,8 +6,9 @@ WORKDIR /app
 COPY . .
 
 RUN mkdir -p build && \
-    g++-14 -std=c++20 -fmodules-ts -O3 -DTSDB_HAS_URING=1 protocol.cpp main.cpp storage.cpp network.cpp -luring -lpthread -o build/tsdb && \
-    g++-14 -std=c++20 -fmodules-ts -O3 protocol.cpp cli.cpp -lpthread -o build/tsdb-cli
+    g++-14 -std=c++20 -fmodules-ts -O3 -x c++ -c protocol.cppm && \
+    g++-14 -std=c++20 -fmodules-ts -O3 -DTSDB_HAS_URING=1 protocol.o main.cpp storage.cpp network.cpp -luring -lpthread -o build/tsdb && \
+    g++-14 -std=c++20 -fmodules-ts -O3 protocol.o cli.cpp -lpthread -o build/tsdb-cli
 
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y liburing2

@@ -51,4 +51,11 @@ public:
     uint64_t get_last_lsn() const {
         return last_lsn.load();
     }
+
+    void trim_log(uint64_t ack_lsn) {
+        std::unique_lock lock(log_mutex);
+        while (!replication_log.empty() && replication_log.front().lsn <= ack_lsn) {
+            replication_log.pop_front();
+        }
+    }
 };
