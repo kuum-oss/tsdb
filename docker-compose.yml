@@ -1,0 +1,32 @@
+version: "3.9"
+services:
+  primary:
+    build: .
+    command: ["./tsdb", "--role", "primary", "--port", "7700", "--wal-dir", "/data/wal"]
+    volumes:
+      - primary_data:/data
+    ports:
+      - "7700:7700"
+
+  replica1:
+    build: .
+    command: ["./tsdb", "--role", "replica", "--port", "7701", "--primary", "primary:7700"]
+    depends_on: [primary]
+
+  replica2:
+    build: .
+    command: ["./tsdb", "--role", "replica", "--port", "7702", "--primary", "primary:7700"]
+    depends_on: [primary]
+
+  client:
+    build: .
+    entrypoint: ["./tsdb-cli"]
+    environment:
+      - TSDB_PRIMARY=primary:7700
+      - TSDB_REPLICAS=replica1:7701,replica2:7702
+    depends_on: [primary, replica1, replica2]
+    stdin_open: true
+    tty: true
+
+volumes:
+  primary_data:
