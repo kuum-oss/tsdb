@@ -10,7 +10,7 @@
 #include "replication.hpp"
 #include "network.hpp"
 
-import tsdb.protocol;
+#include "protocol.hpp"
 
 using namespace tsdb::protocol;
 
@@ -144,16 +144,7 @@ void run_replica_client(const std::string& primary_host, uint16_t primary_port, 
                 MetricEntry entry;
                 if (entry.deserialize(stream_payload.data() + 8, stream_payload.size() - 8) > 0) {
                     // Write locally
-                    auto write_task = [&storage, entry]() -> Task<void> {
-                        co_await storage.write(entry);
-                    };
-                    auto run_coro = [](Task<void> t) {
-                        auto handle = t.handle;
-                        while (!handle.done()) {
-                            handle.resume();
-                        }
-                    };
-                    run_coro(write_task());
+                    storage.write(entry);
                 }
 
                 // Send ACK back

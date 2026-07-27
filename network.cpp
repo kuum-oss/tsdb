@@ -20,7 +20,7 @@
 #define TSDB_HAS_EPOLL 0
 #endif
 
-import tsdb.protocol;
+#include "protocol.hpp"
 
 using namespace tsdb::protocol;
 
@@ -200,18 +200,8 @@ void NetworkServer::handle_connection(int client_fd) {
 
             MetricEntry entry;
             if (entry.deserialize(payload.data(), payload.size()) > 0) {
-                // Storage engine write (coroutine)
-                auto write_task = [this, entry]() -> Task<void> {
-                    co_await storage.write(entry);
-                };
-                // Resolve coroutine synchronously for network request flow
-                auto run_coro = [](Task<void> t) {
-                    auto handle = t.handle;
-                    while (!handle.done()) {
-                        handle.resume();
-                    }
-                };
-                run_coro(write_task());
+                // Storage engine write (synchronous)
+                storage.write(entry);
 
                 // Add to replication stream
                 uint64_t current_lsn = storage.get_lsn() - 1;
@@ -311,9 +301,17 @@ void NetworkServer::handle_connection(int client_fd) {
 
             std::cout << "[Primary] Replica connected. Streaming from LSN " << last_acked_lsn << "\n";
 
+            replication.register_replica(client_fd, last_acked_lsn);
+
             // Loop and stream logs
             std::stop_source stop_src;
             std::jthread sender([this, client_fd, last_acked_lsn, stop_token = stop_src.get_token()]() mutable {
+                struct Cleanup {
+                    ReplicationManager& rep;
+                    int fd;
+                    ~Cleanup() { rep.unregister_replica(fd); }
+                } cleanup{replication, client_fd};
+
                 while (!stop_token.stop_requested()) {
                     auto entries = replication.get_entries_from(last_acked_lsn);
                     for (const auto& item : entries) {
@@ -353,7 +351,7 @@ void NetworkServer::handle_connection(int client_fd) {
                                 ack_lsn |= (static_cast<uint64_t>(ack_payload[i]) << (i * 8));
                             }
                         }
-                        replication.trim_log(ack_lsn);
+                        replication.update_ack(client_fd, ack_lsn);
                         last_acked_lsn = ack_lsn + 1;
                     }
                     // Wait for new entries

@@ -8,6 +8,8 @@
 #include <condition_variable>
 #include "storage.hpp"
 
+#include <unordered_map>
+
 struct ReplicaEntry {
     uint64_t lsn;
     MetricEntry entry;
@@ -19,6 +21,9 @@ private:
     mutable std::shared_mutex log_mutex;
     std::condition_variable_any log_cv;
     std::atomic<uint64_t> last_lsn{0};
+    
+    // Tracks fd -> last acknowledged LSN
+    std::unordered_map<int, uint64_t> replica_acks;
 
 public:
     void add_entry(uint64_t lsn, const MetricEntry& entry) {
@@ -52,9 +57,35 @@ public:
         return last_lsn.load();
     }
 
-    void trim_log(uint64_t ack_lsn) {
+    void register_replica(int fd, uint64_t initial_lsn) {
         std::unique_lock lock(log_mutex);
-        while (!replication_log.empty() && replication_log.front().lsn <= ack_lsn) {
+        replica_acks[fd] = initial_lsn;
+    }
+
+    void unregister_replica(int fd) {
+        std::unique_lock lock(log_mutex);
+        replica_acks.erase(fd);
+        trim_to_min();
+    }
+
+    void update_ack(int fd, uint64_t ack_lsn) {
+        std::unique_lock lock(log_mutex);
+        replica_acks[fd] = ack_lsn;
+        trim_to_min();
+    }
+
+private:
+    void trim_to_min() {
+        if (replica_acks.empty()) {
+            return;
+        }
+        uint64_t min_lsn = std::numeric_limits<uint64_t>::max();
+        for (const auto& [fd, ack] : replica_acks) {
+            if (ack < min_lsn) {
+                min_lsn = ack;
+            }
+        }
+        while (!replication_log.empty() && replication_log.front().lsn <= min_lsn) {
             replication_log.pop_front();
         }
     }

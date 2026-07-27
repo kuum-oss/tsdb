@@ -15,7 +15,7 @@
 #include <array>
 #include "storage.hpp"
 
-import tsdb.protocol;
+#include "protocol.hpp"
 
 using namespace tsdb::protocol;
 

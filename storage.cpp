@@ -114,13 +114,10 @@ public:
         return lsn;
     }
 
-    Task<void> flush_wal() {
+    void flush_wal() {
         std::shared_lock lock(mutex);
         if (mmap_ptr && write_offset > 0) {
-            auto fut = std::async(std::launch::async, [this]() {
-                msync(mmap_ptr, write_offset, MS_SYNC);
-            });
-            co_await std::move(fut);
+            msync(mmap_ptr, write_offset, MS_SYNC);
         }
     }
 
@@ -227,13 +224,13 @@ void StorageEngine::insert_memory(const MetricEntry& entry) {
     ts.values.insert(ts.values.begin() + idx, entry.value);
 }
 
-Task<void> StorageEngine::write(const MetricEntry& entry) {
+void StorageEngine::write(const MetricEntry& entry) {
     uint64_t cur_lsn = lsn_counter.fetch_add(1);
     std::vector<uint8_t> buf;
     entry.serialize(buf);
     wal->append(cur_lsn, buf);
     
-    co_await wal->flush_wal();
+    wal->flush_wal();
 
     insert_memory(entry);
 

@@ -184,7 +184,7 @@ public:
     }
 
     void insert_memory(const MetricEntry& entry);
-    Task<void> write(const MetricEntry& entry);
+    void write(const MetricEntry& entry);
     void trigger_async_snapshot();
     void load_snapshot();
     void prune_expired_data(uint32_t ttl_seconds);
